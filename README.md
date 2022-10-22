@@ -998,3 +998,214 @@ You can also push a single tag.
 ```bash
 git push origin tagname
 ```
+
+## Git Behind the Scenes
+### Working With the Local Config File
+You can configure global settings like your name and email across all Git repos, but you can also configure things on a per-repo basis using the config file which is located in every .git folder. 
+
+You can use `git config --local` to set local configuration properties.
+
+```bash
+git config --local color.ui true
+```
+
+### Refs Folder
+Inside of refs, you'll find a heads directory. `ref/heads` contains one file per branch in a repository. Each file is named after a branch and contains the hash of the commit at the tip of the branch.
+
+For example, `ref/heads/main` contains the commit hash of the last commit on the main branch.
+
+Refs also contains a `refs/tags` folder which contains one file for each tag in a repo.
+
+### The HEAD file
+HEAD is a text file that keeps track of where HEAD points.
+
+If it contains `ref: refs/heads/main`, this means that HEAD is pointing to the main branch.
+
+In detached HEAD, the HEAD file contains a commit hash instead of a branch reference.
+
+### The Objects Folder
+The objects directory contains all the repo files. This is where Git stores the backups of files, the commits in a repo, and more. The files are all compressed and encrypted.
+
+Inside this folder are four types of Git objects:
+- commits
+- trees
+- blobs
+- annotated tags
+
+### Hashing Functions
+Hashing functions are functions that map input data of some arbitrary size to fixed-size output values.
+
+Cryptographic hash functions are a subset with additional constraints:
+1. One-way function which is infeasible to invert
+2. Small change in the input yields large change in the output
+3. Deterministic - same input yields same output
+4. Unlikely to find two outputs with the same value
+
+Git uses the SHA-1 hashing function (though this is planned to eventually change). SHA-1 always generates 40-digit hexadecimal numbers, which Git uses for commit hashes.
+
+### Git as a Key-Value Data Store
+Git is a key-value data store. You can insert any kind of content into a Git repository and Git will hand back a unique key you can later use to retrieve that content. The keys that you get back are SHA-1 checksums.
+
+Giving Git the key allows you to retrieve the value associated with it.
+
+### Hashing With `git hash-object` 
+The `git hash-object` command takes some data, stores it in your `.git/objects` directory, and gives you back the unique SHA-1 hash that refers to that data object.
+
+In its simplest form, Git simply takes some content and returns the unique key that would be used to store the object. But it does not actually store anything.
+
+```bash
+git hash-object filename
+```
+
+
+The `--stdin` option tells git hash-object to use the content from stdin rather than a file. 
+
+```bash
+echo 'hello' | git hash-object --stdin
+```
+
+Rather than simply outputting the key that Git would store the object under, you can use the `-w` option to tell Git to actually write the object to the datastore in `.git/objects`. 
+
+It will create a folder named with the first two characters of the hash, and then a file named with the other 38 characters.
+
+```bash
+echo 'hello' | git hash-object --stdin -w
+```
+
+### Retrieving Data With `git cat-file`
+Once you have data stored in a Git object datastore, you can retrieve it using the `git cat-file` command. The `-p` options tells Git to pretty print the contents of the object based on its type.
+
+```bash
+git cat-file -p object_name
+```
+
+### Blobs
+Git blobs (binary large objects) are the oject type Git uses to store the contents of files in a given repository. Blobs don't even include the filenames of each file or any other dat. They just store the contents of a file.
+
+Blobs get their own hash, output by the same SHA-1 function.
+
+### Trees
+Trees are Git objects used to store the contents of a directory. Each tree contains pointers that can refer to blobs and to other trees.
+
+Each entry in a tree contains the SHA-1 hash of a blob or tree, as well as the mode, type, and filename.
+
+You can use the `git cat-file` command with `main^{tree}` to specify the tree object that is pointed to by the tip of the main branch.
+
+```bash
+git cat-file -p main^{tree}
+```
+
+### Commits
+Commit objects combine a tree object along with information about the context that led to the current tree. 
+
+Commits store a reference to parent commit(s), the authro, the commiter, and the commit message.
+
+When you run `git commit`, Git creates a new commit object whose parent is the current HEAD commit and whose tree is the current content of the staging area.
+
+## Retrieving Lost Work
+### Reflogs
+Git keeps a record of when the tips of branches and other references were updated in the repo.
+
+You can view and update these reference logs using the `git reflog` command.
+
+In the `.git` directory, there is a `logs` directory. Inside `logs` is a `HEAD` file containing entries for every time you update the HEAD reference, such as by switching branches. 
+
+Git only keeps reflogs on your local activity. They are not shared with collaborators. Reflogs also expire. Git cleans out old entries after about 90 days, though this can be configured.
+
+### `git reflog`
+The `git reflog` command accepts subcommands `show`, `expire`, `delete`, and `exists`. Show is the only commonly used variant, and is the default subcommand.
+
+`git reflog show` will show the log of a specific reference (it defaults to HEAD). For example, to view the logs for the tip of the main branch, you could run
+
+```bash
+git reflog show main
+```
+
+### Reflog References
+You can access specific Git refs using `name@{qualifier}`.  This syntax lets you access specific ref pointers and pass them to other commands, including `checkout`, `reset`, and `merge`.
+
+### Time-Based Reflog Qualifiers
+Every entry in the reflogs has a timestamp associated with it. You can filter reflogs entries by time/date by using time qualifiers like:
+- 1.day.ago
+- 3.minutes.ago
+- yesterday
+- Fri, 12 Feb 2021 14:06:21-0800
+
+```bash
+git reflog main@{one.week.ago}
+
+git checkout bugfix@{2.days.ago}
+
+git diff main@{0} main@{yesterday}
+```
+
+### Rescuing Lost Commits With Reflog
+You can sometimes use reflog entries to access commits that seem lost and are not appearing in the Git log.
+
+If you undo a commit using `git reset --hard`, it will not be available in the Git log but that information is still available in the reflog (until the reflog gets cleared). 
+
+```bash
+# view reflog
+git reflog show main
+
+# access previously lost commit
+git reset --hard _lost_commit_hash
+```
+
+### Undoing a Rebase With Reflog
+Reflog can recover changes lost because of a rebase.
+
+```bash
+git rebase -i HEAD~4
+
+# all commits still visible
+git reflog show branch_name
+
+# access previously lost commit
+git reset --hard _lost_commit_hash
+```
+
+## Git Aliases
+### Global Git Config
+Git looks for the global config file at either `~/.gitconfig` or `~/.config/git/config`. Any configuration variables that you change in the file will be applied across all Git repos.
+
+```
+[user]
+        email = yourname@example.com
+        name = yourname
+[core] 
+				editor = code --wait
+[alias]
+        new = !git init && git symbolic-ref HEAD refs/heads/main
+[init]
+        defaultBranch = main
+```
+
+You can also alter configuration variables from the command line if you prefer.
+
+```bash
+git config --global user.name username
+```
+
+You can set up aliases to make your Git experience a bit simpler and faster. For example, you could set `git lg` to print a custom formatted commit log. 
+
+Git will automatially pass arguments to aliases.
+
+```
+[alias]
+			s = status
+			lg = log --oneline
+```
+
+```bash
+git config --global alias.showbranches branch
+```
+
+An `!` in a Git alias tells Git that it is a shell script. These need to include `git` in the command.
+
+```
+# list all git aliases
+la = "!git config -l | grep alias | cut -c 7-"
+```
+
+When working with others, bear in mind they won't use all the same aliases as you.
